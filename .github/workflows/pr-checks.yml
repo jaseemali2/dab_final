@@ -1,0 +1,94 @@
+name: PR checks
+
+on:
+  pull_request:
+    branches: [dev, qa, prod]
+
+# ---------------------------------------------------------------------------
+# Branch naming strategy
+#
+#   Long-lived branches:   dev, qa, prod
+#
+#   Short-lived branches:  <type>/<description>
+#                          <type>/<TICKET-123>-<description>
+#
+#   <type>          when to use it                      PR target
+#   feature/        new functionality                   dev
+#   bugfix/         non-urgent fix                      dev
+#   cherry/         selected commits for promotion      qa or prod
+#
+#   <description>   lowercase letters, digits and hyphens, e.g. add-sales-job
+#   <TICKET-123>    optional ticket ID in uppercase, e.g. DATA-42
+#   Max length      60 characters
+#
+#   Valid:    feature/add-sales-job
+#             feature/DATA-42-add-sales-job
+#             bugfix/fix-null-dates
+#             cherry/DATA-57-hotfix-login
+#   Invalid:  feature/Add_Sales_Job   (uppercase / underscores)
+#             feature/                (no description)
+#             my-branch               (no type prefix)
+#             hotfix/fix-login        (unknown type)
+# ---------------------------------------------------------------------------
+
+jobs:
+  branch-naming:
+    name: Enforce branch naming
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check branch name follows the naming strategy
+        env:
+          HEAD: ${{ github.head_ref }}
+        run: |
+          # Long-lived branches are always valid names (promotions and back-merges)
+          if [[ "$HEAD" =~ ^(dev|qa|prod)$ ]]; then
+            echo "OK: '$HEAD' is a long-lived branch"
+            exit 0
+          fi
+
+          pattern='^(feature|bugfix|cherry)/([A-Z][A-Z0-9]*-[0-9]+-)?[a-z0-9]+(-[a-z0-9]+)*$'
+
+          if (( ${#HEAD} > 60 )); then
+            echo "::error::Branch name '$HEAD' is ${#HEAD} characters long (max 60)"
+            exit 1
+          fi
+
+          if [[ "$HEAD" =~ $pattern ]]; then
+            echo "OK: '$HEAD' follows the naming strategy"
+          else
+            echo "::error::Branch name '$HEAD' does not follow the naming strategy."
+            echo "Use <type>/<description> or <type>/<TICKET-123>-<description>"
+            echo "  type:        feature | bugfix | cherry"
+            echo "  description: lowercase letters, digits and hyphens (e.g. add-sales-job)"
+            echo "Examples: feature/add-sales-job, feature/DATA-42-add-sales-job, cherry/fix-login"
+            echo "Rename with: git branch -m <new-name> && git push origin -u <new-name>"
+            exit 1
+          fi
+
+  branch-flow:
+    name: Enforce branch flow
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check source branch is allowed for target branch
+        env:
+          HEAD: ${{ github.head_ref }}
+          BASE: ${{ github.base_ref }}
+        run: |
+          case "$BASE" in
+            # features/bugfixes into dev, plus back-merges from qa/prod after a cherry-pick
+            dev)  allowed='^((feature|bugfix)/.+|qa|prod)$' ;;
+            # normal promotion from dev, or a cherry-pick branch
+            qa)   allowed='^(dev|cherry/.+)$' ;;
+            # normal promotion from qa, or a cherry-pick branch
+            prod) allowed='^(qa|cherry/.+)$' ;;
+            *)    echo "::error::Unexpected target branch $BASE"; exit 1 ;;
+          esac
+
+          if [[ "$HEAD" =~ $allowed ]]; then
+            echo "OK: $HEAD -> $BASE is allowed"
+          else
+            echo "::error::PR from '$HEAD' into '$BASE' breaks the branch flow (allowed: $allowed)"
+            exit 1
+          fi
+
+  # Add the "Bundle validate" job here later, once the Databricks workspaces exist.
