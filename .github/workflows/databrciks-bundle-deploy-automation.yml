@@ -1,4 +1,4 @@
-name: Databricks Asset Bundle for hub-hcp-sns-sf
+name: Databricks Asset Bundle for hub-hcp-sns-sf project
 run-name: Deploy DAB for hub-hcp-sns-sf on ${{ github.event.inputs.environment }} with target as ${{ github.event.inputs.databricks-target }} for ${{ github.ref_name }}
 
 on:
