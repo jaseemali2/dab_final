@@ -66,6 +66,11 @@ jobs:
       - name: Checkout current repository
         uses: actions/checkout@v4
 
+      - name: Install Databricks CLI
+        uses: databricks/setup-cli@main
+        with:
+          version: 0.256.0
+
       - name: Set environment variables
         env:
           ENVIRONMENT: ${{ inputs.environment }}
