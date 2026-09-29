@@ -1,0 +1,80 @@
+# Databricks Asset Bundle configuration
+# https://learn.microsoft.com/en-us/azure/databricks/dev-tools/bundles/settings
+bundle:
+  name: dab_prj
+  databricks_cli_version: ">= 0.256.0"
+
+experimental:
+  python:
+    mutators: []
+    # Functions called to load resources defined in Python. See jobs/__init__.py
+    resources:
+      - "jobs:load_resources"
+
+targets:
+  dev_local:
+    # This target uses 'mode: development' to create a development copy.
+    # - Deployed resources get prefixed with '[dev my_user_name]'
+    # - Artifacts loaded to /Workspace/Users/${workspace.current_user.userName}/.bundle/
+    mode: development
+    default: true
+    run_as:
+      service_principal_name: ""
+    permissions:
+      - user_name: ${workspace.current_user.userName}
+        level: CAN_MANAGE
+    workspace:
+      host: https://adb-7405612368200701.1.azuredatabricks.net/?o=7405612368200701
+
+  development:
+    presets:
+      name_prefix: "[GITHUB_BRANCH_DEPLOYMENT] "
+      trigger_pause_status: TRIGGER_PAUSE_STATUS_PLACEHOLDER
+      tags:
+        dtu: "PRJ"
+        environment: ENV_PLACEHOLDER
+    default: false
+    run_as:
+      service_principal_name: "DATABRICKS_SP_ID_PLACEHOLDER"
+    permissions:
+      - service_principal_name: "DATABRICKS_SP_ID_PLACEHOLDER"
+        level: CAN_MANAGE
+      - group_name: DATABRICKS_ENV_ENGINEERING_GROUP
+        level: PERMISSIONS_LEVEL_PLACEHOLDER
+    workspace:
+      root_path: /Workspace/bundles/GITHUB_BRANCH_DEPLOYMENT/${bundle.name}/${bundle.target}
+
+  testing:
+    presets:
+      name_prefix: "[GITHUB_BRANCH_DEPLOYMENT] "
+      trigger_pause_status: TRIGGER_PAUSE_STATUS_PLACEHOLDER
+      tags:
+        dtu: "PRJ"
+        environment: ENV_PLACEHOLDER
+    default: false
+    run_as:
+      service_principal_name: "DATABRICKS_SP_ID_PLACEHOLDER"
+    permissions:
+      - service_principal_name: "DATABRICKS_SP_ID_PLACEHOLDER"
+        level: CAN_MANAGE
+      - group_name: DATABRICKS_ENV_ENGINEERING_GROUP
+        level: PERMISSIONS_LEVEL_PLACEHOLDER
+    workspace:
+      root_path: /Workspace/bundles/GITHUB_BRANCH_DEPLOYMENT/${bundle.name}/${bundle.target}
+
+  release:
+    presets:
+      trigger_pause_status: TRIGGER_PAUSE_STATUS_PLACEHOLDER
+      tags:
+        dtu: "PRJ"
+        environment: ENV_PLACEHOLDER
+    default: false
+    run_as:
+      service_principal_name: "DATABRICKS_SP_ID_PLACEHOLDER"
+    permissions:
+      - service_principal_name: "DATABRICKS_SP_ID_PLACEHOLDER"
+        level: CAN_MANAGE
+      - group_name: DATABRICKS_ENV_ENGINEERING_GROUP
+        level: PERMISSIONS_LEVEL_PLACEHOLDER
+    workspace:
+      root_path: /Workspace/bundles/release/${bundle.name}
