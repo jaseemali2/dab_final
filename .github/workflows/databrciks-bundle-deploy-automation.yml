@@ -1,4 +1,4 @@
-name: Databricks Asset Bundle for hub-hcp-sns-sf project
+name: Databricks Asset Bundle for dab_prj
 run-name: Deploy DAB for hub-hcp-sns-sf on ${{ github.event.inputs.environment }} with target as ${{ github.event.inputs.databricks-target }} for ${{ github.ref_name }}
 
 on:
@@ -89,7 +89,7 @@ jobs:
           echo "ENV=${ENV}" >> $GITHUB_ENV
           echo "ENV_UPPER=${ENV_UPPER}" >> $GITHUB_ENV
           echo "ENV_UPPER_SHORT=${ENV_UPPER_SHORT}" >> $GITHUB_ENV
-          echo "KEYVAULT_NAME=DAN-${ENV_UPPER_SHORT}-KVT800-${My_Project_NAME_UPPER}" >> $GITHUB_ENV
+          echo "KEYVAULT_NAME=DAN-${ENV_UPPER_SHORT}-KVT800-HCP" >> $GITHUB_ENV
           echo "TRIGGER_PAUSE_STATUS=${TRIGGER_PAUSE_STATUS}" >> $GITHUB_ENV
           echo "PERMISSIONS_LEVEL=${PERMISSIONS_LEVEL}" >> $GITHUB_ENV
           echo "EXECUTE_DDL_JOB=${EXECUTE_DDL_JOB}" >> $GITHUB_ENV
@@ -100,3 +100,76 @@ jobs:
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
           client-id: ${{ vars.AZURE_CLIENT_ID }}
+
+      - name: Az Keyvault Secrets
+        id: keyvault
+        run: |
+          secrets=("databricks-sp-client-id" "databricks-sp-client-secret")
+          for secretName in "${secrets[@]}"
+          do
+            value=$(az keyvault secret show --name "$secretName" --vault-name "${{ env.KEYVAULT_NAME }}" --query value --output tsv)
+            echo "::add-mask::$value"
+            echo "$secretName=$value" >> "$GITHUB_OUTPUT"
+          done
+        shell: bash
+
+      - name: Set Databricks variables
+        run: |
+          DATABRICKS_WORKSPACE_NAME="DAN-${{ env.ENV_UPPER_SHORT }}-DBW800-${{ env.My_Project_NAME_UPPER }}"
+          DATAPROCESSING_RESOURCE_GROUP_NAME="DAN-${{ env.ENV_UPPER_SHORT }}-RSG800-${{ env.My_Project_NAME_UPPER }}"
+          DATABRICKS_DOMAIN=$(az databricks workspace show --resource-group "${DATAPROCESSING_RESOURCE_GROUP_NAME}" --name "${DATABRICKS_WORKSPACE_NAME}" | jq -r '.workspaceUrl')
+          DATABRICKS_HOST="https://${DATABRICKS_DOMAIN}"
+          DATABRICKS_ENV_ENGINEERING_GROUP="AAD-GAA-ONEHOUSE-${{ env.My_Project_NAME_UPPER }}-DataEngineer"
+
+          echo "DATABRICKS_HOST=${DATABRICKS_HOST}" >> $GITHUB_ENV
+          echo "DATABRICKS_WORKSPACE_NAME=${DATABRICKS_WORKSPACE_NAME}" >> $GITHUB_ENV
+          echo "DATAPROCESSING_RESOURCE_GROUP_NAME=${DATAPROCESSING_RESOURCE_GROUP_NAME}" >> $GITHUB_ENV
+          echo "DATABRICKS_DOMAIN=${DATABRICKS_DOMAIN}" >> $GITHUB_ENV
+          echo "DATABRICKS_ENV_ENGINEERING_GROUP=${DATABRICKS_ENV_ENGINEERING_GROUP}" >> $GITHUB_ENV
+          echo "DATABRICKS_CLIENT_ID=${{ steps.keyvault.outputs.databricks-sp-client-id }}" >> $GITHUB_ENV
+          echo "DATABRICKS_CLIENT_SECRET=${{ steps.keyvault.outputs.databricks-sp-client-secret }}" >> $GITHUB_ENV
+        shell: bash
+
+      - name: Replace Service Principal ID in Databricks YAML-files
+        run: |
+          sed -i "s|DATABRICKS_SP_ID_PLACEHOLDER|${{ env.DATABRICKS_CLIENT_ID }}|g" databricks/*.yml
+
+      - name: Extract current branch name
+        id: extract_branch_full
+        run: echo "BRANCH_NAME=$(echo ${GITHUB_REF#refs/heads/})" >> $GITHUB_ENV
+
+      - name: Replace Github branch in Databricks YAML-files
+        run: |
+          sed -i "s|GITHUB_BRANCH_DEPLOYMENT|${{env.BRANCH_NAME}}|g" databricks/*.yml
+
+      - name: Replace DATABRICKS_ENV_ENGINEERING_GROUP and settings in Databricks YAML-files
+        run: |
+          sed -i "s|DATABRICKS_ENV_ENGINEERING_GROUP|${{env.DATABRICKS_ENV_ENGINEERING_GROUP}}|g" databricks/*.yml
+          sed -i "s|My_Project_NAME_PLACEHOLDER|${{env.My_Project_NAME_UPPER}}|g" databricks/*.yml
+          sed -i "s|ENV_PLACEHOLDER|${{env.ENV_UPPER}}|g" databricks/*.yml
+          sed -i "s|TRIGGER_PAUSE_STATUS_PLACEHOLDER|${{env.TRIGGER_PAUSE_STATUS}}|g" databricks/*.yml
+          sed -i "s|PERMISSIONS_LEVEL_PLACEHOLDER|${{env.PERMISSIONS_LEVEL}}|g" databricks/*.yml
+
+      - name: Create Starter Warehouse ID variable
+        run: |
+          STARTER_WAREHOUSE_ID=$(databricks warehouses list -o json | jq -r '.[] | select(.name == "Serverless Starter Warehouse") | .id')
+          echo "WAREHOUSE_ID=${STARTER_WAREHOUSE_ID}" >> $GITHUB_ENV
+
+      - name: Deploy Databricks Bundle
+        working-directory: ./databricks
+        env:
+          BUNDLE_VAR_warehouse_id: ${{ env.WAREHOUSE_ID }}
+          DATABRICKS_BUNDLE_ENV: ${{ inputs.databricks-target }}
+        run: |
+          databricks bundle validate
+          databricks bundle deploy
+
+      - name: Execute DDL job for creating objects in Databricks
+        if: ${{ env.EXECUTE_DDL_JOB == 'YES' }}
+        working-directory: ./databricks
+        env:
+          BUNDLE_VAR_warehouse_id: ${{ env.WAREHOUSE_ID }}
+          DATABRICKS_BUNDLE_ENV: ${{ github.event.inputs['databricks-target'] }}
+        run: |
+          databricks bundle run execute_ddl_job
+        shell: bash
