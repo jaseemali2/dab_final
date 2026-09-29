@@ -1,0 +1,102 @@
+name: Databricks Asset Bundle for hub-hcp-sns-sf project
+run-name: Deploy DAB for hub-hcp-sns-sf on ${{ github.event.inputs.environment }} with target as ${{ github.event.inputs.databricks-target }} for ${{ github.ref_name }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        type: choice
+        description: "Environment"
+        required: true
+        default: "eu.dev"
+        options:
+          - "dev"
+          - "qa"
+          - "prod"
+      databricks-target:
+        type: choice
+        description: "Databricks target"
+        required: true
+        default: "development"
+        options:
+          - "development"
+          - "testing"
+          - "release"
+      trigger-pause-status:
+        type: choice
+        description: "Trigger pause status"
+        required: true
+        default: "PAUSED"
+        options:
+          - "PAUSED"
+          - "UNPAUSED"
+      permissions-level:
+        type: choice
+        description: "Permissions level for Databricks assets"
+        required: true
+        default: "CAN_MANAGE"
+        options:
+          - "CAN_MANAGE"
+          - "CAN_RUN"
+          - "CAN_VIEW"
+      execute_ddl_job:
+        type: choice
+        description: "Whether to execute DDL job for creating objects in Databricks"
+        required: true
+        default: "NO"
+        options:
+          - "YES"
+          - "NO"
+
+permissions:
+  actions: read
+  id-token: write
+  pull-requests: write
+  contents: write
+
+jobs:
+  dab-deploy:
+    name: DAB Deploy
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - name: install databricks bundles
+        run: pip install databricks-bundles==0.256.0
+
+      - name: Checkout current repository
+        uses: actions/checkout@v4
+
+      - name: Set environment variables
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          My_Project_NAME=hub-hcp-sns-sf
+          My_Project_NAME_UPPER="${My_Project_NAME^^}"
+          # REGION="${ENVIRONMENT%%.*}"
+          # REGION_UPPER="${REGION^^}"
+          ENV="${ENVIRONMENT##*.}"
+          ENV_UPPER="${ENV^^}"
+          ENV_UPPER_SHORT=${ENV_UPPER:0:1}
+          TRIGGER_PAUSE_STATUS="${{ inputs.trigger-pause-status }}"
+          PERMISSIONS_LEVEL="${{ inputs.permissions-level }}"
+          EXECUTE_DDL_JOB="${{ github.event.inputs['execute_ddl_job'] }}"
+
+          echo "My_Project_NAME=${My_Project_NAME}"
+          echo "My_Project_NAME_UPPER=${My_Project_NAME_UPPER}"
+
+          echo "My_Project_NAME_UPPER=${My_Project_NAME_UPPER}" >> $GITHUB_ENV
+          # echo "REGION_UPPER=${REGION_UPPER}" >> $GITHUB_ENV
+          echo "ENV=${ENV}" >> $GITHUB_ENV
+          echo "ENV_UPPER=${ENV_UPPER}" >> $GITHUB_ENV
+          echo "ENV_UPPER_SHORT=${ENV_UPPER_SHORT}" >> $GITHUB_ENV
+          echo "KEYVAULT_NAME=DAN-${ENV_UPPER_SHORT}-KVT800-${My_Project_NAME_UPPER}" >> $GITHUB_ENV
+          echo "TRIGGER_PAUSE_STATUS=${TRIGGER_PAUSE_STATUS}" >> $GITHUB_ENV
+          echo "PERMISSIONS_LEVEL=${PERMISSIONS_LEVEL}" >> $GITHUB_ENV
+          echo "EXECUTE_DDL_JOB=${EXECUTE_DDL_JOB}" >> $GITHUB_ENV
+
+      - name: Login to Azure CLI
+        uses: azure/login@v2
+        with:
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
